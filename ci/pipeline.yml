@@ -1,0 +1,109 @@
+resource_types:
+
+  - name: pull-request
+    type: docker-image
+    source:
+      repository: teliaoss/github-pr-resource
+      tag: dev
+
+resources:
+
+  - name: generic-pr
+    type: pull-request
+    source:
+      access_token: ((github-access-token))
+      repository: harry-tribalscale/test
+
+  - name: staging
+    type: git
+    source:
+      uri: git@github.com:harry-tribalscale/test
+      branch: staging
+      private_key: ((github-private-key))
+
+  - name: master
+    type: git
+    source:
+      uri: git@github.com:harry-tribalscale/test
+      branch: master
+      private_key: ((github-private-key))
+
+jobs:
+
+  - name: test-env
+    plan:
+    - get: generic-pr
+      trigger: true
+    - task: test
+      params:
+        AWS_SDK_KEY: ((aws-key))
+        AWS_SDK_SECRET: ((aws-secret))
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: alfietham/node-java-swaggergen
+            tag: latest
+        run:
+          path: sh
+          args:
+          - -exc
+          - |
+            echo "pull request is working"
+        inputs:
+          - name: generic-pr
+      on_success:
+        put: generic-pr
+        params:
+          path: generic-pr
+          status: success
+      on_failure:
+        put: generic-pr
+        params:
+          path: generic-pr
+          status: failure
+
+  - name: deploy-staging-lambdas
+    plan:
+    - get: staging
+      trigger: true
+    - task: build
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: node
+            tag: 8.10-alpine
+        run:
+          path: sh
+          args:
+          - -exc
+          - |
+            cd staging
+            echo "deploy staging"
+        inputs:
+          - name: staging
+
+  - name: deploy-prod-lambdas
+    plan:
+    - get: master
+      trigger: true
+    - task: build
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: node
+            tag: 8.10-alpine
+        run:
+          path: sh
+          args:
+          - -exc
+          - |
+            cd master
+            echo "deploy production"
+        inputs:
+          - name: master
